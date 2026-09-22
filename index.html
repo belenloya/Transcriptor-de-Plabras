@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transcriptor Dinámico de Voz</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            background-color: #1e293b;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            width: 100%;
+            max-width: 800px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            text-align: center;
+            color: #38bdf8;
+        }
+
+        /* Indicador de volumen visual */
+        .volume-bar-container {
+            width: 100%;
+            height: 12px;
+            background-color: #334155;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .volume-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #4ade80, #facc15, #f87171);
+            transition: width 0.05s ease-out;
+        }
+
+        /* Leyenda de colores */
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            justify-content: center;
+            font-size: 0.85rem;
+            background-color: #0f172a;
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .color-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        /* Botones de control */
+        .btn-container {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+
+        button {
+            padding: 12px 20px;
+            font-size: 1rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        #btnIniciar {
+            background-color: #22c55e;
+            color: white;
+        }
+
+        #btnIniciar:hover {
+            background-color: #16a34a;
+        }
+
+        #btnDetener {
+            background-color: #ef4444;
+            color: white;
+        }
+
+        #btnDetener:hover {
+            background-color: #dc2626;
+        }
+
+        #btnLimpiar {
+            background-color: #64748b;
+            color: white;
+        }
+
+        #btnLimpiar:hover {
+            background-color: #475569;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #estado {
+            text-align: center;
+            font-style: italic;
+            color: #94a3b8;
+            font-size: 0.95rem;
+        }
+
+        /* Área de transcripción */
+        #resultado {
+            width: 100%;
+            min-height: 250px;
+            max-height: 400px;
+            padding: 20px;
+            border: 2px solid #334155;
+            border-radius: 12px;
+            background-color: #0f172a;
+            overflow-y: auto;
+            line-height: 2.2;
+            word-wrap: break-word;
+        }
+
+        /* Estilos aplicados dinámicamente a las palabras */
+        .palabra {
+            display: inline-block;
+            margin: 0 3px;
+            transition: font-size 0.1s ease, color 0.2s ease;
+        }
+
+        /* Estilos por conectores */
+        .conector-adicion { color: #38bdf8; font-weight: bold; }        /* Azul */
+        .conector-causal { color: #facc15; font-weight: bold; }         /* Amarillo */
+        .conector-oposicion { color: #f87171; font-weight: bold; }      /* Rojo */
+        .conector-temporal { color: #c084fc; font-weight: bold; }       /* Morado */
+        .conector-conclusión { color: #4ade80; font-weight: bold; }     /* Verde */
+        
+        .interino {
+            color: #64748b;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Transcriptor Dinámico por Voz</h1>
+        
+        <!-- Indicador de volumen del micrófono -->
+        <div class="volume-bar-container">
+            <div id="volumeBar" class="volume-bar"></div>
+        </div>
+
+        <!-- Leyenda de colores para conectores -->
+        <div class="legend">
+            <div class="legend-item"><div class="color-dot" style="background: #38bdf8;"></div> Adición (y, además, también)</div>
+            <div class="legend-item"><div class="color-dot" style="background: #facc15;"></div> Causa (porque, ya que, pues)</div>
+            <div class="legend-item"><div class="color-dot" style="background: #f87171;"></div> Oposición (pero, aunque, sin embargo)</div>
+            <div class="legend-item"><div class="color-dot" style="background: #c084fc;"></div> Tiempo (entonces, luego, mientras)</div>
+            <div class="legend-item"><div class="color-dot" style="background: #4ade80;"></div> Conclusión (por lo tanto, así que)</div>
+        </div>
+
+        <div class="btn-container">
+            <button id="btnIniciar">Iniciar</button>
+            <button id="btnDetener" disabled>Detener</button>
+            <button id="btnLimpiar">Limpiar</button>
+        </div>
+
+        <p id="estado">Haz clic en "Iniciar" para dar permisos al micrófono y comenzar.</p>
+
+        <div id="resultado"></div>
+    </div>
+
+    <script>
+        // Lista de palabras conectoras por categoría
+        const conectores = {
+            adicion: ['y', 'e', 'también', 'tambien', 'además', 'ademas', 'asimismo', 'incluso'],
+            causal: ['porque', 'ya que', 'puesto que', 'dado que', 'pues'],
+            oposicion: ['pero', 'aunque', 'sin embargo', 'no obstante', 'sino', 'por el contrario'],
+            temporal: ['entonces', 'luego', 'mientras', 'después', 'despues', 'antes', 'cuando'],
+            conclusion: ['por lo tanto', 'por tanto', 'así que', 'asi que', 'en conclusión', 'en conclusion', 'finalmente']
+        };
+
+        // Elementos DOM
+        const btnIniciar = document.getElementById('btnIniciar');
+        const btnDetener = document.getElementById('btnDetener');
+        const btnLimpiar = document.getElementById('btnLimpiar');
+        const estado = document.getElementById('estado');
+        const resultado = document.getElementById('resultado');
+        const volumeBar = document.getElementById('volumeBar');
+
+        // Variables de Audio y Reconocimiento
+        let audioContext;
+        let analyser;
+        let microphone;
+        let javascriptNode;
+        let volumenActual = 1; // Factor de volumen (multiplicador)
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+        if (!SpeechRecognition) {
+            alert("Tu navegador no soporta el reconocimiento de voz. Usa Google Chrome o Microsoft Edge.");
+        } else {
+            const reconocimiento = new SpeechRecognition();
+            reconocimiento.lang = 'es-ES';
+            reconocimiento.continuous = true;
+            reconocimiento.interimResults = true;
+
+            // --- MEDIDOR DE VOLUMEN (Web Audio API) ---
+            async function iniciarAudio() {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    analyser = audioContext.createAnalyser();
+                    microphone = audioContext.createMediaStreamSource(stream);
+                    javascriptNode = audioContext.createScriptProcessor(2048, 1, 1);
+
+                    analyser.smoothingTimeConstant = 0.8;
+                    analyser.fftSize = 1024;
+
+                    microphone.connect(analyser);
+                    analyser.connect(javascriptNode);
+                    javascriptNode.connect(audioContext.destination);
+
+                    javascriptNode.onaudioprocess = function() {
+                        const array = new Uint8Array(analyser.frequencyBinCount);
+                        analyser.getByteFrequencyData(array);
+                        let values = 0;
+                        for (let i = 0; i < array.length; i++) {
+                            values += array[i];
+                        }
+                        const promedio = values / array.length;
+
+                        // Escalar el promedio para medir el volumen (0.8 a 2.5)
+                        volumenActual = 0.8 + (promedio / 20); 
+                        if (volumenActual > 2.8) volumenActual = 2.8;
+
+                        // Actualizar la barra visual de volumen
+                        const porcentajeVisual = Math.min(100, (promedio / 60) * 100);
+                        volumeBar.style.width = porcentajeVisual + '%';
+                    };
+                } catch (err) {
+                    console.error("Error al acceder al micrófono:", err);
+                }
+            }
+
+            function detenerAudio() {
+                if (javascriptNode) javascriptNode.onaudioprocess = null;
+                if (audioContext) audioContext.close();
+                volumeBar.style.width = '0%';
+            }
+
+            // --- PROCESADOR DE TEXTO Y COLORES ---
+            function obtenerClaseConector(palabra) {
+                const limpia = palabra.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "");
+                if (conectores.adicion.includes(limpia)) return 'conector-adicion';
+                if (conectores.causal.includes(limpia)) return 'conector-causal';
+                if (conectores.oposicion.includes(limpia)) return 'conector-oposicion';
+                if (conectores.temporal.includes(limpia)) return 'conector-temporal';
+                if (conectores.conclusion.includes(limpia)) return 'conector-conclusión';
+                return '';
+            }
+
+            function formatearTexto(texto, factorTamano) {
+                const palabras = texto.trim().split(/\s+/);
+                return palabras.map(palabra => {
+                    const claseConector = obtenerClaseConector(palabra);
+                    const fontSize = Math.max(0.9, Math.min(2.5, factorTamano)).toFixed(2);
+                    return `<span class="palabra ${claseConector}" style="font-size: ${fontSize}rem;">${palabra}</span>`;
+                }).join(' ');
+            }
+
+            // --- EVENTOS DEL RECONOCIMIENTO DE VOZ ---
+            reconocimiento.onstart = () => {
+                estado.textContent = "Escuchando... El tamaño de la letra cambiará según la intensidad de tu voz.";
+                estado.style.color = "#4ade80";
+                btnIniciar.disabled = true;
+                btnDetener.disabled = false;
+            };
+
+            reconocimiento.onerror = (event) => {
+                estado.textContent = "Error: " + event.error;
+                estado.style.color = "#f87171";
+            };
+
+            reconocimiento.onend = () => {
+                if (!btnIniciar.disabled) return;
+                estado.textContent = "Pausado. Presiona 'Iniciar' para continuar.";
+                estado.style.color = "#94a3b8";
+                btnIniciar.disabled = false;
+                btnDetener.disabled = true;
+                detenerAudio();
+            };
+
+            reconocimiento.onresult = (event) => {
+                let textoInterino = '';
+
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    const transcripcion = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        const htmlFormateado = formatearTexto(transcripcion, volumenActual);
+                        resultado.innerHTML += htmlFormateado + ' ';
+                    } else {
+                        textoInterino += transcripcion;
+                    }
+                }
+
+                // Desplazar el scroll hacia el final automáticamente
+                resultado.scrollTop = resultado.scrollHeight;
+            };
+
+            // --- CONTROLES DE BOTONES ---
+            btnIniciar.addEventListener('click', () => {
+                iniciarAudio();
+                reconocimiento.start();
+            });
+
+            btnDetener.addEventListener('click', () => {
+                reconocimiento.stop();
+                detenerAudio();
+                btnIniciar.disabled = false;
+                btnDetener.disabled = true;
+                estado.textContent = "Detenido.";
+                estado.style.color = "#94a3b8";
+            });
+
+            btnLimpiar.addEventListener('click', () => {
+                resultado.innerHTML = '';
+            });
+        }
+    </script>
+</body>
+</html>
